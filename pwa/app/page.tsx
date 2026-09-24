@@ -3,10 +3,75 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PixelIcon } from '@/components/pixel-icon';
-import { slugify } from '@/lib/slug';
 import { askedSessions, clearAsked, notifyReply } from '@/lib/notify';
+import { slugify } from '@/lib/slug';
 
 type Sess = { id: string; title: string; preview: string; updated: number; lastRole?: string };
+
+/** Mobile-style swipe row: drag left to reveal a red delete zone; release
+ *  past the threshold to delete, else it snaps back. A tap still opens. */
+function SwipeRow({
+  onOpen,
+  onDelete,
+  children,
+}: {
+  onOpen: () => void;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const x0 = useRef(0);
+  const moved = useRef(false);
+
+  return (
+    <div className="relative overflow-hidden rounded">
+      <div className="absolute inset-y-0 right-0 flex w-24 items-center justify-center rounded bg-[var(--oz-danger)]/80 text-white">
+        <PixelIcon name="trash" size={16} />
+      </div>
+      <button
+        onClick={() => {
+          if (!moved.current) onOpen();
+        }}
+        onPointerDown={(e) => {
+          if (!e.isPrimary) return;
+          x0.current = e.clientX;
+          moved.current = false;
+          setDragging(true);
+        }}
+        onPointerMove={(e) => {
+          if (!dragging) return;
+          const d = Math.min(0, e.clientX - x0.current);
+          if (d < -6) moved.current = true;
+          setDx(Math.max(-96, d));
+        }}
+        onPointerUp={() => {
+          setDragging(false);
+          if (dx < -64) onDelete();
+          else setDx(0);
+        }}
+        onPointerCancel={() => {
+          setDragging(false);
+          setDx(0);
+        }}
+        onPointerLeave={() => {
+          if (dragging) {
+            setDragging(false);
+            setDx(0);
+          }
+        }}
+        style={{
+          transform: `translateX(${dx}px)`,
+          transition: dragging ? 'none' : 'transform 150ms ease-out',
+          touchAction: 'pan-y',
+        }}
+        className="oz-row relative w-full rounded border border-[var(--oz-border)] bg-[var(--oz-surface)] px-3 py-2 text-left"
+      >
+        {children}
+      </button>
+    </div>
+  );
+}
 
 export default function SessionsPage() {
   const router = useRouter();
@@ -76,6 +141,15 @@ export default function SessionsPage() {
     setName('');
   }
 
+  async function remove(s: Sess) {
+    setSessions((list) => list.filter((x) => x.id !== s.id)); // optimistic
+    try {
+      await fetch(`/api/session/${s.id}`, { method: 'DELETE' });
+    } catch {
+      void load(); // failed — resync with the server list
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-3 pb-6">
       <header className="flex items-center justify-between pt-4 pb-2">
@@ -122,13 +196,13 @@ export default function SessionsPage() {
       <ul className="flex flex-col gap-1">
         {sessions.map((s) => (
           <li key={s.id}>
-            <button
-              onClick={() => router.push(`/session/${slugify(s.title)}?id=${s.id}`)}
-              className="oz-row w-full rounded border border-[var(--oz-border)] bg-[var(--oz-surface)] px-3 py-2 text-left"
+            <SwipeRow
+              onOpen={() => router.push(`/session/${slugify(s.title)}?id=${s.id}`)}
+              onDelete={() => void remove(s)}
             >
               <div className="truncate text-sm">{s.title || s.id}</div>
               <div className="truncate text-xs text-[var(--oz-dim)]">{s.preview || '\u00a0'}</div>
-            </button>
+            </SwipeRow>
           </li>
         ))}
       </ul>
