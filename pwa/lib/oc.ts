@@ -16,10 +16,9 @@ export async function ocFetch(path: string, init?: RequestInit) {
 /** Accepts a real session id (sess_*) or a room slug (title with dashes). */
 export async function resolveId(idOrSlug: string): Promise<string> {
   if (idOrSlug.startsWith('sess_')) return idOrSlug;
-  const sessions = (await ocFetch('/session')) as Array<Record<string, any>>;
-  const hit = sessions.find(
-    (s) => slugify(s.title || '') === idOrSlug || s.id === idOrSlug
-  );
+  type Sess = { id: string; title?: string };
+  const sessions = (await ocFetch('/session')) as Sess[];
+  const hit = sessions.find((s) => slugify(s.title || '') === idOrSlug || s.id === idOrSlug);
   if (!hit) throw new Error(`no session for slug ${idOrSlug}`);
   return hit.id;
 }

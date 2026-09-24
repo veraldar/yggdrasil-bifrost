@@ -46,20 +46,18 @@ test('messages proxy exposes run-state headers', async ({ request }) => {
 
 test('attachments: image + file chips, remove, send via REST', async ({ page }) => {
   await page.goto(`/session/${NAME}?id=${sessionId}`);
-  await page.getByRole('button', { name: 'attach', exact: true }).click();
-  await page
-    .locator('input[type=file]')
-    .setInputFiles([
-      { name: 'note.md', mimeType: 'text/markdown', buffer: Buffer.from('# hello\nworld') },
-      {
-        name: 'dot.png',
-        mimeType: 'image/png',
-        buffer: Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-          'base64',
-        ),
-      },
-    ]);
+  await page.getByRole('button', { name: 'attach file', exact: true }).click();
+  await page.locator('input[type=file]').setInputFiles([
+    { name: 'note.md', mimeType: 'text/markdown', buffer: Buffer.from('# hello\nworld') },
+    {
+      name: 'dot.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      ),
+    },
+  ]);
   await expect(page.getByText('note.md')).toBeVisible();
   await expect(page.getByText('dot.png')).toBeVisible();
   // remove the image chip, keep the file
@@ -87,17 +85,19 @@ test('voice: PTT connects to LiveKit, keyboard mode releases the room', async ({
   // keyboard mode must tear the room down (mic release fix)
   await page.getByRole('button', { name: 'text mode' }).click();
   await expect
-    .poll(
-      () => sockets.filter((s) => s.isClosed()).length,
-      { timeout: 15_000, message: 'LiveKit websocket still open after keyboard mode' },
-    )
+    .poll(() => sockets.filter((s) => s.isClosed()).length, {
+      timeout: 15_000,
+      message: 'LiveKit websocket still open after keyboard mode',
+    })
     .toBe(sockets.length);
 });
 
 test('hands-free mode arms without error', async ({ page }) => {
   await page.goto(`/session/${NAME}?id=${sessionId}`);
   await page.getByRole('button', { name: 'hands-free' }).click();
-  await expect(page.getByText(/hands-free — just talk|connecting/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/hands-free — just talk|connecting/)).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByRole('button', { name: 'text mode' }).click();
   await expect(page.getByText('hands-free — just talk')).toHaveCount(0);
 });
