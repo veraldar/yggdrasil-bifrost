@@ -11,8 +11,12 @@ Checklist = board. A phase done = all boxes checked.
 - [x] Voice: PTT + hands-free; keyboard mode releases the mic (OS-level)
 - [x] Voice self-heals stale tokens; polls bounded, silent on failure
 - [x] Attachments: one picker — images downscale, files become text parts
-- [x] Chat page scrolls only in transcript; session list never caches empty
+- [x] Chat page scrolls only vertically in transcript; session list never caches empty
 - [x] Phone talks only to the Next proxy; opencode stays tailnet/localhost-only
+- [ ] Context injection: a fresh phone session (text/PTT/hands-free) knows where it
+  is (`~/Work` scope), what bifrost is, and where details live — via layered
+  `AGENTS.md` (stub at `~/Work`, full at `~/Work/bifrost`), no per-message tokens.
+  **Verify with `e2e/context.spec.ts`.**
 
 ## Done (base)
 
@@ -25,9 +29,11 @@ Checklist = board. A phase done = all boxes checked.
 
 ## Current — harden to v1.0
 
+- [ ] Context injection verified from the phone (text, PTT, hands-free) — spec above
 - [ ] Phone e2e pass: voice round-trip, busy→notify, mic release, scroll feel
+- [ ] Human-only checks listed in this file (mic capture, TTS quality, notifications, PWA install)
 - [ ] Vercel deploy validated in isolated container (clean `npm ci && build`, env matrix)
-- [ ] Release v0.1.0 (tag + GitHub release) only after the two boxes above
+- [ ] Release v0.1.0 (tag + GitHub release) only after all boxes above
 
 ## Deferred
 

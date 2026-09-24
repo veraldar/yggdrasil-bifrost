@@ -1,0 +1,32 @@
+import { expect, test } from '@playwright/test';
+
+/**
+ * Context injection: a fresh phone session must know where it is, what bifrost
+ * is, and which stack carried the question — before touching any file.
+ * Guarded by the layered AGENTS.md (~/Work stub → ~/Work/bifrost full).
+ */
+test('fresh session answers with bifrost context', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'new session' }).click();
+  await page.getByPlaceholder('session name…').fill('e2e-context');
+  await page.getByRole('button', { name: 'create & open' }).click();
+  await expect(page).toHaveURL(/\/session\/e2e-context/);
+
+  await page.getByPlaceholder('message…').fill(
+    'One sentence: what is bifrost, in which directory does it live?'
+  );
+  await page.getByRole('button', { name: 'send', exact: true }).click();
+
+  const reply = page.getByText(/\(assistant/);
+  await expect(reply).toBeVisible({ timeout: 90_000 });
+  // only the ANSWER (not the prompt echo) contains the location → proves the
+  // agent knew it without reading files first
+  await expect(page.getByText(/Work\/bifrost/).last()).toBeVisible();
+});
+
+test('cleanup: delete the context session', async ({ request }) => {
+  const list = await request.get('/api/session');
+  const s = (await list.json()).find((x: { title: string }) => x.title === 'e2e-context');
+  test.skip(!s, 'nothing to clean');
+  expect((await request.delete(`/api/session/${s.id}`)).ok()).toBeTruthy();
+});
