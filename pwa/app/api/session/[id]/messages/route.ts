@@ -15,18 +15,30 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const { id } = await ctx.params;
     const sid = await resolveId(id);
     const msgs = await ocFetch(`/session/${sid}/message`);
-    const out = msgs.map((m: any) => ({
-      role: m.info?.role || m.role,
-      text: (m.parts || [])
+    const out = msgs.map((m: any) => {
+      const text = (m.parts || [])
         .filter((p: any) => p.type === 'text')
         .map((p: any) => p.text || '')
         .join('\n')
-        .trim(),
-      images: (m.parts || [])
-        .filter((p: any) => p.type === 'image' || p.mime?.startsWith('image/'))
-        .map((p: any) => p.url || p.data || null),
-      time: m.info?.time?.created || 0,
-    }));
+        .trim();
+      // tool-only steps must stay visible on the phone ("thinking then
+      // nothing" bug): one compact line of tool activity, no part details
+      const tools = (m.parts || [])
+        .filter((p: any) => p.type === 'tool' && p.state?.title)
+        .map((p: any) => String(p.state.title).slice(0, 40));
+      return {
+        role: m.info?.role || m.role,
+        text:
+          text ||
+          (tools.length
+            ? `⚙ ${tools.slice(0, 3).join(' · ')}${tools.length > 3 ? ` +${tools.length - 3}` : ''}`
+            : ''),
+        images: (m.parts || [])
+          .filter((p: any) => p.type === 'image' || p.mime?.startsWith('image/'))
+          .map((p: any) => p.url || p.data || null),
+        time: m.info?.time?.created || 0,
+      };
+    });
     const all = out.filter((m: any) => m.text || m.images.length);
     // run state for the busy indicator: opencode emits one assistant message
     // per step, so "an assistant message landed" ≠ "the run is done". The run

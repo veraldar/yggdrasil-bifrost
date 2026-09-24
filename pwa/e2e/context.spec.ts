@@ -22,6 +22,18 @@ test('fresh session answers with bifrost context', async ({ page }) => {
   // only the ANSWER (not the prompt echo) contains the location → proves the
   // agent knew it without reading files first
   await expect(page.getByText(/Work\/bifrost/).last()).toBeVisible();
+
+  // context must come from the stub chain, not exploration: ≤1 tool call,
+  // and if one ran it's the pointed AGENTS.md read — never a repo crawl
+  const sid = new URL(page.url()).searchParams.get('id');
+  const raw = (await (
+    await fetch(`http://127.0.0.1:4096/session/${sid}/message`)
+  ).json()) as Array<{ info: { role: string }; parts: Array<{ type: string; state?: any }> }>;
+  const toolParts = raw.flatMap((m) => m.parts || []).filter((p) => p.type === 'tool');
+  expect(toolParts.length, 'context question must not crawl the repo').toBeLessThanOrEqual(1);
+  for (const t of toolParts) {
+    expect(String(t.state?.input?.filePath || '')).toMatch(/bifrost\/AGENTS\.md$/);
+  }
 });
 
 test('cleanup: delete the context session', async ({ request }) => {
