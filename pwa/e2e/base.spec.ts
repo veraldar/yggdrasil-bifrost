@@ -46,7 +46,7 @@ test('messages proxy exposes run-state headers', async ({ request }) => {
 
 test('attachments: image + file chips, remove, send via REST', async ({ page }) => {
   await page.goto(`/session/${NAME}?id=${sessionId}`);
-  await page.getByRole('button', { name: 'attach file', exact: true }).click();
+  await page.getByRole('button', { name: 'attach', exact: true }).click();
   await page.locator('input[type=file]').setInputFiles([
     { name: 'note.md', mimeType: 'text/markdown', buffer: Buffer.from('# hello\nworld') },
     {

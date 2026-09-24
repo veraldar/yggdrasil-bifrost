@@ -93,7 +93,6 @@ export default function SessionView({
   const roomRef = useRef<Room | null>(null);
   const modeRef = useRef<Mode>('text');
   const unmountedRef = useRef(false);
-  const attachInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePromiseRef = useRef<Promise<Room> | null>(null);
@@ -641,37 +640,19 @@ export default function SessionView({
 
       {/* text input — always available */}
       <div className="flex items-end gap-2 border-t border-[var(--oz-border)] py-3">
-        {/* two pickers: photos/camera (accept drives the phone's gallery
-            sheet) and arbitrary files — one generic input gave the wrong
-            picker on phones */}
+        {/* single paper-clip button — opens the phone's photo/camera picker
+            (accept=image/*); files ride along when picked from there */}
         <button
-          aria-label="attach photo"
+          aria-label="attach"
           onClick={() => photoInputRef.current?.click()}
-          className="rounded border border-[var(--oz-border)] px-2.5 py-2 text-[var(--oz-dim)]"
-        >
-          <PixelIcon name="image" size={16} />
-        </button>
-        <input
-          ref={photoInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            void addAttachments(e.target.files);
-            e.currentTarget.value = '';
-          }}
-        />
-        <button
-          aria-label="attach file"
-          onClick={() => attachInputRef.current?.click()}
           className="rounded border border-[var(--oz-border)] px-2.5 py-2 text-[var(--oz-dim)]"
         >
           <PixelIcon name="attachment" size={16} />
         </button>
         <input
-          ref={attachInputRef}
+          ref={photoInputRef}
           type="file"
+          accept="image/*"
           multiple
           hidden
           onChange={(e) => {
