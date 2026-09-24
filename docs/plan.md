@@ -7,16 +7,18 @@ Checklist = board. A phase done = all boxes checked.
 
 - [x] List sessions, select one, create, delete
 - [x] Text message → agent reply lands in transcript
-- [x] Busy state clears only when the run settles (not per-step)
+- [x] Busy state clears only when the run settles (not per-step); a wedged run
+  (prompt never picked up) is auto-aborted after 30s with a visible hint
 - [x] Voice: PTT + hands-free; keyboard mode releases the mic (OS-level)
 - [x] Voice self-heals stale tokens; polls bounded, silent on failure
 - [x] Attachments: one picker — images downscale, files become text parts
-- [x] Chat page scrolls only vertically in transcript; session list never caches empty
+- [x] Chat scrolls only vertically inside the transcript; session list never
+  caches empty; tool-only steps stay visible (⚙ line)
 - [x] Phone talks only to the Next proxy; opencode stays tailnet/localhost-only
-- [ ] Context injection: a fresh phone session (text/PTT/hands-free) knows where it
-  is (`~/Work` scope), what bifrost is, and where details live — via layered
-  `AGENTS.md` (stub at `~/Work`, full at `~/Work/bifrost`), no per-message tokens.
-  **Verify with `e2e/context.spec.ts`.**
+- [x] Context injection: a fresh phone session (text/PTT/hands-free) knows where
+  it is (`~/Work` scope), what bifrost is, and where details live — layered
+  `AGENTS.md` (stub at `~/Work`, full at `~/Work/bifrost`); meta questions cost
+  ≤1 pointer read, e2e-enforced (`e2e/context.spec.ts`)
 
 ## Done (base)
 
@@ -24,16 +26,27 @@ Checklist = board. A phase done = all boxes checked.
 - [x] Python agent: room slug ⇄ opencode session, STT→opencode→TTS (Mac MLX, speaches fallback)
 - [x] PWA: sessions UI, transcript w/ markdown, attachments + sandboxed HTML, voice modes, notifications
 - [x] Diagnostics: console/net/tap/voice events → `pwa/.diag/`; net-fail captures error bodies
-- [x] systemd units: `lk-pwa`, `lk-agent`, `opencode-serve` (reboots self-heal)
-- [x] Repo: `veraldar/yggdrasil-bifrost`, context via root `AGENTS.md`
+- [x] systemd units: `lk-pwa`, `lk-agent`, `opencode-serve`, `lk-verify.timer` (reboots self-heal)
+- [x] Repo: `veraldar/yggdrasil-bifrost`, private infra in gitignored `docs/local.md`
+- [x] e2e: Playwright suite (10 specs) against the live stack; env/test record auto-generated
 
 ## Current — harden to v1.0
 
-- [ ] Context injection verified from the phone (text, PTT, hands-free) — spec above
-- [ ] Phone e2e pass: voice round-trip, busy→notify, mic release, scroll feel
-- [ ] Human-only checks listed in this file (mic capture, TTS quality, notifications, PWA install)
-- [ ] Vercel deploy validated in isolated container (clean `npm ci && build`, env matrix)
+- [ ] Phone e2e pass (user, on the phone): voice round-trip, busy→notify, mic
+  release, scroll feel, ⚙ tool lines visible
+- [ ] Vercel deploy validated in isolated container (clean `npm ci && build`, smoke)
 - [ ] Release v0.1.0 (tag + GitHub release) only after all boxes above
+
+## Human-only checks (cannot be automated on the desktop — run on the phone)
+
+- [ ] Mic capture: PTT hold → speak → agent hears you (STT correct); keyboard
+  mode drops the OS mic indicator
+- [ ] Hands-free: VAD turn-taking feels natural; no echo loop from speaker→mic
+- [ ] TTS quality/latency acceptable on real speaker (Mac MLX path)
+- [ ] Backgrounded reply → notification actually arrives (Android battery rules)
+- [ ] PWA install: browser menu → install → standalone launch, icon, theme
+- [ ] Perceived voice round-trip latency < ~2s
+- [ ] Attachments from phone: camera shot + gallery image + a .md file
 
 ## Deferred
 
