@@ -1,0 +1,11 @@
+[project]
+name = "lk-opencode-agent"
+version = "0.1.0"
+description = "LiveKit voice agent bridging to opencode server"
+requires-python = ">=3.10"
+dependencies = [
+    "livekit-agents[openai,silero,turn-detector]~=1.2",
+    "livekit-api~=1.0",
+    "python-dotenv~=1.0",
+    "httpx~=0.28",
+]

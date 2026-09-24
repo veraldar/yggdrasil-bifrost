@@ -1,0 +1,17 @@
+{
+  "name": "opencode voice",
+  "short_name": "opencode",
+  "description": "Voice & text sessions with opencode",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080810",
+  "theme_color": "#080810",
+  "icons": [
+    {
+      "src": "/lk-logo-dark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

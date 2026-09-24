@@ -1,0 +1,23 @@
+# bifrost — voice-controlled opencode
+
+Talk or type from the phone; the code you're changing lives here. Full architecture: `README.md`.
+
+## Map
+- `pwa/` — Next.js 15 phone client. `/api/*` proxy is the ONLY seam to opencode (phone never talks to it directly).
+- `agent/` — Python livekit-agents worker: STT → opencode → TTS. Room slug = session slug.
+- `deploy/` — docker compose: LiveKit (host net) + speaches fallback.
+- `docs/plan.md` — checklist board, work top-to-bottom. `docs/open-questions.md` — every unresolved decision lands there.
+
+## Hardware
+This box runs everything. Mac Studio serves speech models (MLX Qwen3-ASR/TTS) on the LAN — endpoint in `agent/.env` (`SPEACHES_URL`). Private IPs/hostnames/ssh: `docs/local.md` (gitignored). Tailnet-only, nothing public.
+
+## Verify
+- pwa: `cd pwa && npm run build`
+- agent: `cd agent && uv run agent.py console` (local mic test)
+- deploy: `cd deploy && docker compose up -d`
+- services: `systemctl --user restart lk-pwa lk-agent opencode-serve`
+- live diag: `tail pwa/.diag/$(date +%F).log`
+
+## Rules
+- Proceed autonomously; verify with evidence; contact user only when stuck or looping.
+- No commits unless asked. Secrets stay out of git.

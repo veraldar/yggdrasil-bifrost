@@ -1,0 +1,129 @@
+'use client';
+
+import { useState } from 'react';
+import { Streamdown } from 'streamdown';
+import { PixelIcon } from '@/components/pixel-icon';
+
+export type Msg = { role: string; text: string; images: string[]; time: number };
+
+function htmlBlocks(text: string): string[] {
+  const out: string[] = [];
+  const re = /```html\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) out.push(m[1]);
+  return out;
+}
+
+/** Split a user message into prose and attached-file segments (proxy fences files). */
+function fileChunks(text: string): { kind: 'prose' | 'file'; name?: string; body: string }[] {
+  const out: { kind: 'prose' | 'file'; name?: string; body: string }[] = [];
+  const re = /\n?--- attached file: ([^\n]+) ---\n```[^\n]*\n([\s\S]*?)```/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push({ kind: 'prose', body: text.slice(last, m.index) });
+    out.push({ kind: 'file', name: m[1], body: m[2] });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push({ kind: 'prose', body: text.slice(last) });
+  return out;
+}
+
+function fmtTime(t: number): string {
+  if (!t) return '';
+  const d = new Date(t);
+  const opts: Intl.DateTimeFormatOptions = d.toDateString() === new Date().toDateString()
+    ? { hour: '2-digit', minute: '2-digit' }
+    : { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+  return d.toLocaleString(undefined, opts);
+}
+
+export function SessionMessage({ m }: { m: Msg }) {
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [preview, setPreview] = useState<number | null>(null);
+  const isUser = m.role === 'user';
+  const htmls = isUser ? [] : htmlBlocks(m.text);
+  const stamp = fmtTime(m.time);
+
+  return (
+    <div className="break-words text-sm leading-relaxed">
+      <div className="mb-0.5 flex items-baseline gap-2">
+        <span className={isUser ? 'text-[var(--oz-success)]' : 'text-[var(--oz-dim)]'}>
+          ({isUser ? 'you' : m.role})
+        </span>
+        {stamp && <span className="text-[10px] text-[var(--oz-dim)]">{stamp}</span>}
+      </div>
+      {isUser ? (
+        fileChunks(m.text).map((c, i) =>
+          c.kind === 'prose' ? (
+            <span key={i} className="whitespace-pre-wrap">
+              {c.body}
+            </span>
+          ) : (
+            <details key={i} className="my-1 rounded border border-[var(--oz-border)] px-2 py-1 text-xs">
+              <summary className="cursor-pointer text-[var(--oz-dim)]">📎 {c.name}</summary>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--oz-dim)]">
+                {c.body.slice(0, 4000)}
+                {c.body.length > 4000 ? '…' : ''}
+              </pre>
+            </details>
+          )
+        )
+      ) : (
+        <Streamdown>{m.text}</Streamdown>
+      )}
+
+      {/* rendered/raw toggle for html blocks (assistant only) */}
+      {htmls.map((src, i) => (
+        <div key={`h${i}`} className="mt-1">
+          <button
+            onClick={() => setPreview(preview === i ? null : i)}
+            className="flex w-fit items-center gap-1 rounded border border-[var(--oz-border)] px-2 py-0.5 text-xs text-[var(--oz-dim)]"
+          >
+            {preview === i ? (
+              <>
+                <PixelIcon name="stop" size={10} /> raw
+              </>
+            ) : (
+              <>
+                <PixelIcon name="play" size={10} /> preview html
+              </>
+            )}
+          </button>
+          {preview === i && (
+            // sandbox="" — no scripts, no forms, no same-origin
+            <iframe
+              sandbox=""
+              srcDoc={src}
+              title={`html preview ${i + 1}`}
+              className="mt-1 h-64 w-full rounded border border-[var(--oz-border)] bg-white"
+            />
+          )}
+        </div>
+      ))}
+
+      {m.images?.map((src, j) =>
+        src ? (
+          <button key={`i${j}`} onClick={() => setLightbox(src)} className="block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt="attachment"
+              className="mt-1 max-h-48 rounded border border-[var(--oz-border)]"
+            />
+          </button>
+        ) : null
+      )}
+
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox} alt="attachment" className="max-h-full max-w-full object-contain" />
+        </div>
+      )}
+    </div>
+  );
+}

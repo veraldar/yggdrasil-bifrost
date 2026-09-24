@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+.venv/
+
+# builds
+.next/
+out/
+*.tsbuildinfo
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# private infra: real IPs, hostnames, ssh details
+docs/local.md
+deploy/livekit.yaml
+
+# test + diag artifacts
+pwa/test-results/
+pwa/playwright-report/
+.diag/
+
+# python
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+*.swp

@@ -1,0 +1,16 @@
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+  # ICE candidates were auto-detected as docker bridges only — the phone
+  # (tailnet) had no media path. Pin to the IPs peers can actually reach:
+  ips:
+    includes:
+      - <omarchy-tailnet-ip>/32 # tailscale0 — phone (PWA) media over tailnet
+      - <omarchy-lan-ip>/32 # enp2s0 — LAN peers (Mac Studio voice stack)
+logging:
+  level: info

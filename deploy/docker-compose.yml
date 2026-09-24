@@ -1,0 +1,24 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    env_file: .env
+
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    restart: unless-stopped
+    environment:
+      WHISPER__COMPUTE_TYPE: int8
+      STT_MODEL_TTL: -1
+      TTS_MODEL_TTL: -1
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - speaches-hf:/home/ubuntu/.cache/huggingface/hub
+
+volumes:
+  speaches-hf:
