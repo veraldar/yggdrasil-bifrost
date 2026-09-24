@@ -49,7 +49,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const lastRaw = msgs[msgs.length - 1];
     const lastRole = lastRaw?.info?.role || lastRaw?.role || '';
     const lastDone = lastRole === 'assistant' ? lastRaw?.info?.time?.completed || 0 : 0;
-    const runState = `${lastRaw?.info?.id || lastRaw?.id || 'none'}|${lastDone}`;
+    // 3rd field = role of the last raw message: the client needs to know
+    // "runner never started" (assistant steps absent → still user-last)
+    const runState = `${lastRaw?.info?.id || lastRaw?.id || 'none'}|${lastDone}|${lastRole}`;
     // long sessions: default to the latest window, older pages load on demand
     const limit = Number(new URL(req.url).searchParams.get('limit') || 0);
     const body = limit > 0 ? all.slice(-limit) : all;

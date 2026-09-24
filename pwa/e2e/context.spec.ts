@@ -17,7 +17,9 @@ test('fresh session answers with bifrost context', async ({ page }) => {
   );
   await page.getByRole('button', { name: 'send', exact: true }).click();
 
-  const reply = page.getByText(/\(assistant/);
+  // two assistant bubbles are expected: a ⚙ tool step (if the model reads
+  // the pointed AGENTS.md) + the text answer — target the LAST one
+  const reply = page.getByText(/\(assistant/).last();
   await expect(reply).toBeVisible({ timeout: 90_000 });
   // only the ANSWER (not the prompt echo) contains the location → proves the
   // agent knew it without reading files first

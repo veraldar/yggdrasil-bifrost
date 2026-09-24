@@ -3,8 +3,6 @@ import { expect, test } from '@playwright/test';
 const NAME = `e2e-base-${Date.now().toString(36)}`;
 let sessionId = '';
 
-test.describe.configure({ order: 'default' });
-
 test('home: sessions list renders from live opencode', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'opencode' })).toBeVisible();
@@ -74,7 +72,7 @@ test('attachments: image + file chips, remove, send via REST', async ({ page }) 
 test('voice: PTT connects to LiveKit, keyboard mode releases the room', async ({ page }) => {
   await page.goto(`/session/${NAME}?id=${sessionId}`);
   let livekitWs = 0;
-  const sockets: WebSocket[] = [];
+  const sockets: Array<{ isClosed(): boolean }> = [];
   page.on('websocket', (ws) => {
     if (ws.url().includes('7880') || ws.url().includes('livekit')) {
       livekitWs += 1;

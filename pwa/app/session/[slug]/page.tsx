@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Room, RoomEvent } from 'livekit-client';
 import { PixelIcon } from '@/components/pixel-icon';
 import { type Msg, SessionMessage } from '@/components/session-message';
@@ -62,7 +61,6 @@ export default function SessionView({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ id?: string }>;
 }) {
-  const router = useRouter();
   const [slug, setSlug] = useState('');
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -93,6 +91,8 @@ export default function SessionView({
   // (~2.5s apart) — steps chain within ms, so a live run never looks stable.
   const runStateRef = useRef('');
   const runStreakRef = useRef(0);
+  // wedge guard: fires at most once per send (see the busy ticker)
+  const wedgeFiredRef = useRef(false);
 
   /** Show the user's own message instantly; the poll reconciles later. */
   function addEcho(text: string, images: string[] = []) {
@@ -155,12 +155,15 @@ export default function SessionView({
           const fresh: Msg[] = await r.json();
           setTotal(Number(r.headers.get('X-Total-Count') || fresh.length));
           const st = r.headers.get('X-Run-State') || '';
+          // "id|completed|lastRole" — completed=0 while a step runs or the
+          // last raw message is the user's own prompt
+          const [, done] = st.split('|');
           if (st && st === runStateRef.current) {
             runStreakRef.current += 1;
           } else {
             runStateRef.current = st;
             // fresh state that already shows a completed run = seen once
-            runStreakRef.current = st.endsWith('|0') ? 0 : 1;
+            runStreakRef.current = done === '0' ? 0 : 1;
           }
           // backgrounded + the run's final answer landed = notify (a bare
           // assistant message is not enough — steps land mid-run)
@@ -232,14 +235,27 @@ export default function SessionView({
   useEffect(() => {
     if (!busy) return;
     setBusySecs(0);
+    wedgeFiredRef.current = false;
+    let sec = 0;
     const t = setInterval(() => {
-      setBusySecs((n) => n + 1);
+      sec += 1;
+      setBusySecs(sec);
       // two consecutive polls saw the same finished run state → done
       if (runStreakRef.current >= 2) {
         setBusy(false);
         runStreakRef.current = 0;
         clearAsked(slug);
         if (document.hidden) void notifyReply(slug);
+        return;
+      }
+      // wedge guard: 30s busy and the LAST raw message is still the user's
+      // own prompt (state ends "|0|user") → the runner never picked the
+      // message up (hung earlier run, queue dead). Abort so the session
+      // un-wedges; the prompt stays in the transcript, user can resend.
+      if (!wedgeFiredRef.current && sec >= 30 && runStateRef.current.endsWith('|0|user')) {
+        wedgeFiredRef.current = true;
+        setError('no reply — the run seemed stuck, auto-stopped. Send again.');
+        void fetch(`/api/session/${slug}/abort`, { method: 'POST' }).catch(() => {});
       }
     }, 1000);
     return () => clearInterval(t);
@@ -506,22 +522,6 @@ export default function SessionView({
           {segBtn('ptt', 'mic', 'push-to-talk')}
           {segBtn('free', 'infinity', 'hands-free')}
         </div>
-        <button
-          aria-label="delete session"
-          onClick={async () => {
-            if (!window.confirm('delete this session?')) return;
-            try {
-              const r = await fetch(`/api/session/${slug}`, { method: 'DELETE' });
-              if (!r.ok) throw new Error(String(r.status));
-              router.push('/');
-            } catch (e) {
-              setError(`delete failed: ${e}`);
-            }
-          }}
-          className="rounded border border-[var(--oz-border)] p-1.5 text-[var(--oz-dim)]"
-        >
-          <PixelIcon name="trash" size={14} />
-        </button>
       </header>
 
       {error && (
