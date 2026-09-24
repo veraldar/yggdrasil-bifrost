@@ -12,7 +12,6 @@ type Attach =
   | { kind: 'image'; name: string; dataUrl: string }
   | { kind: 'file'; name: string; content: string };
 
-
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([
     p,
@@ -54,6 +53,22 @@ async function downscaleImage(f: File): Promise<string> {
   }
 }
 
+/** Collapse consecutive ⚙ tool-only steps into one line with a count —
+ *  an edit burst otherwise floods the chat with near-identical bubbles. */
+function collapseToolSteps(msgs: Msg[]): Msg[] {
+  const out: Msg[] = [];
+  for (const m of msgs) {
+    const prev = out[out.length - 1];
+    if (m.text.startsWith('⚙ ') && prev && prev.text.startsWith('⚙ ')) {
+      const n = (prev.count || 1) + 1;
+      out[out.length - 1] = { ...m, text: `${m.text} ×${n}`, count: n };
+      continue;
+    }
+    out.push({ ...m });
+  }
+  return out;
+}
+
 export default function SessionView({
   params,
   searchParams,
@@ -79,6 +94,7 @@ export default function SessionView({
   const modeRef = useRef<Mode>('text');
   const unmountedRef = useRef(false);
   const attachInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voicePromiseRef = useRef<Promise<Room> | null>(null);
   const echoesRef = useRef<Msg[]>([]);
@@ -87,10 +103,23 @@ export default function SessionView({
   // "working…" clears only when the run is really over: opencode emits one
   // assistant message per STEP, so the first reply chunk is not the end.
   // The proxy reports the last raw message + its completed timestamp; the
-  // run counts as finished once that state is unchanged across two polls
-  // (~2.5s apart) — steps chain within ms, so a live run never looks stable.
+  // run counts as finished only when that state is unchanged across two
+  // polls (~2.5s apart) AND the completed timestamp is set (ends "|0" means
+  // in-progress: user msg last or step still streaming — thinking models
+  // can hold that state for minutes) AND the transcript grew since the send
+  // (a stable pre-send state from the previous run must not clear it).
   const runStateRef = useRef('');
   const runStreakRef = useRef(0);
+  const totalRef = useRef(0);
+  const runBaseTotalRef = useRef(0);
+
+  /** Reset run tracking at send time so the previous run's settled state
+   *  can't instantly clear the new "working…" indicator. */
+  function armRunWatch() {
+    runStateRef.current = '';
+    runStreakRef.current = 0;
+    runBaseTotalRef.current = totalRef.current;
+  }
   // wedge guard: fires at most once per send (see the busy ticker)
   const wedgeFiredRef = useRef(false);
 
@@ -153,7 +182,9 @@ export default function SessionView({
         });
         if (r.ok) {
           const fresh: Msg[] = await r.json();
-          setTotal(Number(r.headers.get('X-Total-Count') || fresh.length));
+          const totalCount = Number(r.headers.get('X-Total-Count') || fresh.length);
+          setTotal(totalCount);
+          totalRef.current = totalCount;
           const st = r.headers.get('X-Run-State') || '';
           // "id|completed|lastRole" — completed=0 while a step runs or the
           // last raw message is the user's own prompt
@@ -240,8 +271,15 @@ export default function SessionView({
     const t = setInterval(() => {
       sec += 1;
       setBusySecs(sec);
-      // two consecutive polls saw the same finished run state → done
-      if (runStreakRef.current >= 2) {
+      // done = two consecutive polls saw the same run state, that state is a
+      // COMPLETED assistant message (mid part "0" = in-progress — thinking
+      // models can hold it for minutes), and the transcript grew past what
+      // existed at send time (a stable pre-send state must not clear it)
+      if (
+        runStreakRef.current >= 2 &&
+        runStateRef.current.split('|')[1] !== '0' &&
+        totalRef.current > runBaseTotalRef.current
+      ) {
         setBusy(false);
         runStreakRef.current = 0;
         clearAsked(slug);
@@ -378,6 +416,7 @@ export default function SessionView({
     await mic(false);
     stickRef.current = true;
     setBusy(true); // cleared when the run state settles (see poller)
+    armRunWatch();
     try {
       const agent = Array.from(room.remoteParticipants.values())[0];
       if (agent) {
@@ -468,30 +507,39 @@ export default function SessionView({
       // voice context: through the room so the agent speaks the reply
       // (attachments must take the REST path — the room only carries text)
       setBusy(true);
+      armRunWatch();
       addEcho(text);
       try {
         await roomRef.current.localParticipant.sendText(text, { topic: 'lk.chat' });
       } catch (e) {
         setError(`send failed: ${e}`);
+        setBusy(false);
       }
       return;
     }
     setBusy(true);
+    armRunWatch();
     try {
       const r = await fetch(`/api/session/${slug}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, images, files, async: true }),
+        // a hung radio/socket must surface as an error, not a silent stuck send
+        signal: AbortSignal.timeout(30_000),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         setError(d.error || `send failed (${r.status})`);
+        setInput((prev) => (prev.trim() ? prev : text)); // draft back, no clobber
+        setBusy(false);
       } else {
         addEcho(text, images);
       }
       await loadMsgs();
     } catch {
       setError('send failed');
+      setInput((prev) => (prev.trim() ? prev : text)); // draft back, no clobber
+      setBusy(false);
     }
   }
 
@@ -551,7 +599,7 @@ export default function SessionView({
             empty session — type, hold the mic, or go hands-free
           </div>
         )}
-        {msgs.map((m, i) => (
+        {collapseToolSteps(msgs).map((m, i) => (
           <SessionMessage key={i} m={m} />
         ))}
         {busy && (
@@ -593,8 +641,29 @@ export default function SessionView({
 
       {/* text input — always available */}
       <div className="flex items-end gap-2 border-t border-[var(--oz-border)] py-3">
+        {/* two pickers: photos/camera (accept drives the phone's gallery
+            sheet) and arbitrary files — one generic input gave the wrong
+            picker on phones */}
         <button
-          aria-label="attach"
+          aria-label="attach photo"
+          onClick={() => photoInputRef.current?.click()}
+          className="rounded border border-[var(--oz-border)] px-2.5 py-2 text-[var(--oz-dim)]"
+        >
+          <PixelIcon name="image" size={16} />
+        </button>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            void addAttachments(e.target.files);
+            e.currentTarget.value = '';
+          }}
+        />
+        <button
+          aria-label="attach file"
           onClick={() => attachInputRef.current?.click()}
           className="rounded border border-[var(--oz-border)] px-2.5 py-2 text-[var(--oz-dim)]"
         >
