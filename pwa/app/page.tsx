@@ -6,7 +6,14 @@ import { PixelIcon } from '@/components/pixel-icon';
 import { askedSessions, clearAsked, notifyReply } from '@/lib/notify';
 import { slugify } from '@/lib/slug';
 
-type Sess = { id: string; title: string; preview: string; updated: number; lastRole?: string };
+type Sess = {
+  id: string;
+  title: string;
+  preview: string;
+  updated: number;
+  lastRole?: string;
+  pending?: boolean;
+};
 
 /** Mobile-style swipe row: drag left to reveal a red delete zone; release
  *  past the threshold to delete, else it snaps back. A tap still opens. */
@@ -95,11 +102,13 @@ export default function SessionsPage() {
       const list: Sess[] = await r.json();
       setSessions(list);
       // sessions the user asked a question in: when a reply lands, it's
-      // their turn again — notify (even from the background)
+      // their turn again — notify (even from the background). pending=false
+      // proves the run actually finished (mid-run steps also end in an
+      // assistant message)
       for (const s of list) {
         const slug = slugify(s.title || s.id);
         if (!askedSessions().includes(slug)) continue;
-        if (s.lastRole === 'assistant') {
+        if (s.lastRole === 'assistant' && !s.pending) {
           clearAsked(slug);
           void notifyReply(slug);
         }
@@ -153,7 +162,7 @@ export default function SessionsPage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-3 pb-6">
       <header className="flex items-center justify-between pt-4 pb-2">
-        <h1 className="text-sm font-bold tracking-widest uppercase">opencode</h1>
+        <h1 className="text-sm font-bold tracking-widest uppercase">Bifrost</h1>
         <button onClick={load} className="text-xs text-[var(--oz-dim)] hover:text-white">
           {loading ? '···' : 'refresh'}
         </button>
@@ -194,17 +203,27 @@ export default function SessionsPage() {
       )}
 
       <ul className="flex flex-col gap-1">
-        {sessions.map((s) => (
-          <li key={s.id}>
-            <SwipeRow
-              onOpen={() => router.push(`/session/${slugify(s.title)}?id=${s.id}`)}
-              onDelete={() => void remove(s)}
-            >
-              <div className="truncate text-sm">{s.title || s.id}</div>
-              <div className="truncate text-xs text-[var(--oz-dim)]">{s.preview || '\u00a0'}</div>
-            </SwipeRow>
-          </li>
-        ))}
+        {[...sessions]
+          .sort(
+            (a, b) =>
+              Number(!!b.pending) - Number(!!a.pending) || (b.updated || 0) - (a.updated || 0)
+          )
+          .map((s) => (
+            <li key={s.id}>
+              <SwipeRow
+                onOpen={() => router.push(`/session/${slugify(s.title)}?id=${s.id}`)}
+                onDelete={() => void remove(s)}
+              >
+                <div className="flex items-center gap-1.5">
+                  {s.pending && <span className="oz-busy text-[var(--oz-active)]">●</span>}
+                  <div className="truncate text-sm">{s.title || s.id}</div>
+                </div>
+                <div className="truncate text-xs text-[var(--oz-dim)]">
+                  {s.pending ? 'awaiting answer…' : s.preview || '\u00a0'}
+                </div>
+              </SwipeRow>
+            </li>
+          ))}
       </ul>
     </main>
   );

@@ -9,14 +9,13 @@
  *   POST   /api/session/[id]/prompt     → {text, images?: string[](dataURL), files?: {name, content}[]}
  *   DELETE /api/session/[id]            → delete
  */
-
 import { NextResponse } from 'next/server';
 import { bustCache, getCache, setCache } from '@/lib/oc-cache';
+import { isRunLive } from '@/lib/oc-live';
 
 export const dynamic = 'force-dynamic';
 
 const OC = process.env.OPENCODE_URL || 'http://127.0.0.1:4096';
-
 
 async function ocFetch(path: string, init?: RequestInit) {
   const r = await fetch(`${OC}${path}`, {
@@ -49,15 +48,27 @@ export async function GET() {
             parts?: Array<{ type?: string; text?: string }>;
           }>;
           const last = [...msgs].reverse().find((m) => textOf(m.parts));
+          const lastRole = last?.info?.role || '';
           return {
             id: s.id,
             title: s.title || s.id,
             updated: s.time?.updated || 0,
             preview: textOf(last?.parts).slice(0, 80),
-            lastRole: last?.info?.role || '',
+            lastRole,
+            // awaiting an answer: a run is live right now (definitive, tracked
+            // in-flight by the proxy) or the last visible message is the
+            // user's own prompt — such sessions pin to the top of the list
+            pending: isRunLive(s.id) || lastRole === 'user',
           };
         } catch {
-          return { id: s.id, title: s.title || s.id, updated: s.time?.updated || 0, preview: '', lastRole: '' };
+          return {
+            id: s.id,
+            title: s.title || s.id,
+            updated: s.time?.updated || 0,
+            preview: '',
+            lastRole: '',
+            pending: isRunLive(s.id),
+          };
         }
       })
     );
