@@ -11,7 +11,7 @@
  */
 import { NextResponse } from 'next/server';
 import { bustCache, getCache, setCache } from '@/lib/oc-cache';
-import { isRunLive } from '@/lib/oc-live';
+import { PENDING_TTL_MS, isRunLive } from '@/lib/oc-live';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,9 +61,13 @@ export async function GET() {
             // against its local read marks to badge unread replies
             lastAt: last?.info?.time?.created || 0,
             // awaiting an answer: a run is live right now (definitive, tracked
-            // in-flight by the proxy) or the last visible message is the
-            // user's own prompt — such sessions pin to the top of the list
-            pending: isRunLive(s.id) || lastRole === 'user',
+            // in-flight by the proxy), or the last visible message is the
+            // user's own prompt AND it's fresh — aborted/failed prompts stay
+            // user-last forever and must not pin the session as thinking
+            pending:
+              isRunLive(s.id) ||
+              (lastRole === 'user' &&
+                (last?.info?.time?.created || 0) > Date.now() - PENDING_TTL_MS),
           };
         } catch {
           return {

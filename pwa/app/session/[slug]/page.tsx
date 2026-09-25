@@ -6,6 +6,7 @@ import { PixelIcon } from '@/components/pixel-icon';
 import { type Msg, SessionMessage } from '@/components/session-message';
 import { diagEvent } from '@/lib/diag';
 import { clearAsked, ensureNotifyPermission, markAsked, notifyReply } from '@/lib/notify';
+import { PENDING_TTL_MS } from '@/lib/oc-live';
 import { markRead } from '@/lib/read';
 
 type Mode = 'text' | 'ptt' | 'free';
@@ -198,10 +199,14 @@ export default function SessionView({
             runStreakRef.current = done === '0' ? 0 : 1;
           }
           // entry arm: a prompt was sent before navigating away (or the run
-          // is live from another client) → bring the working indicator back
+          // is live from another client) → bring the working indicator back.
+          // Stale unanswered prompts (aborted/failed, past the TTL) must NOT
+          // re-arm — nothing is running there
           if (autoArmRef.current === slug) {
             autoArmRef.current = '';
-            if (liveRef.current || st.endsWith('|0|user')) {
+            const lastT = fresh.length ? fresh[fresh.length - 1].time : 0;
+            const freshPrompt = st.endsWith('|0|user') && lastT > Date.now() - PENDING_TTL_MS;
+            if (liveRef.current || freshPrompt) {
               runBaseTotalRef.current = totalCount;
               setBusy(true);
             }
