@@ -43,8 +43,10 @@ export async function GET() {
     const enriched = await Promise.all(
       sessions.slice(0, 50).map(async (s) => {
         try {
-          const msgs = (await ocFetch(`/session/${s.id}/messages`)) as Array<{
-            info?: { role?: string };
+          // NOTE: /messages (plural) is the SPA catch-all HTML page, not an
+          // API — r.json() throws and every session silently enriched empty
+          const msgs = (await ocFetch(`/session/${s.id}/message`)) as Array<{
+            info?: { role?: string; time?: { created?: number } };
             parts?: Array<{ type?: string; text?: string }>;
           }>;
           const last = [...msgs].reverse().find((m) => textOf(m.parts));
@@ -55,6 +57,9 @@ export async function GET() {
             updated: s.time?.updated || 0,
             preview: textOf(last?.parts).slice(0, 80),
             lastRole,
+            // when the last visible message landed — the client compares it
+            // against its local read marks to badge unread replies
+            lastAt: last?.info?.time?.created || 0,
             // awaiting an answer: a run is live right now (definitive, tracked
             // in-flight by the proxy) or the last visible message is the
             // user's own prompt — such sessions pin to the top of the list
@@ -67,6 +72,7 @@ export async function GET() {
             updated: s.time?.updated || 0,
             preview: '',
             lastRole: '',
+            lastAt: 0,
             pending: isRunLive(s.id),
           };
         }

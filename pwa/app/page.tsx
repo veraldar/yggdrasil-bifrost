@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PixelIcon } from '@/components/pixel-icon';
 import { askedSessions, clearAsked, notifyReply } from '@/lib/notify';
+import { lastRead, markRead } from '@/lib/read';
 import { slugify } from '@/lib/slug';
 
 type Sess = {
@@ -12,6 +13,7 @@ type Sess = {
   preview: string;
   updated: number;
   lastRole?: string;
+  lastAt?: number;
   pending?: boolean;
 };
 
@@ -101,6 +103,12 @@ export default function SessionsPage() {
       });
       const list: Sess[] = await r.json();
       setSessions(list);
+      // first run after this feature shipped: treat everything currently in
+      // the list as read — a wall of unread dots helps nobody
+      if (!localStorage.getItem('oz-read-init')) {
+        for (const s of list) markRead(slugify(s.title || s.id), s.lastAt || 0);
+        localStorage.setItem('oz-read-init', '1');
+      }
       // sessions the user asked a question in: when a reply lands, it's
       // their turn again — notify (even from the background). pending=false
       // proves the run actually finished (mid-run steps also end in an
@@ -160,71 +168,86 @@ export default function SessionsPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-3 pb-6">
-      <header className="flex items-center justify-between pt-4 pb-2">
-        <h1 className="text-sm font-bold tracking-widest uppercase">Bifrost</h1>
-        <button onClick={load} className="text-xs text-[var(--oz-dim)] hover:text-white">
-          {loading ? '···' : 'refresh'}
+    <>
+      <div aria-hidden="true" className="oz-ygg-bg" />
+      <main className="relative z-[1] mx-auto flex min-h-dvh max-w-md flex-col px-3 pb-6">
+        <header className="flex items-center justify-between pt-4 pb-2">
+          <h1 className="text-sm font-bold tracking-widest uppercase">Bifrost</h1>
+          <button onClick={load} className="text-xs text-[var(--oz-dim)] hover:text-white">
+            {loading ? '···' : 'refresh'}
+          </button>
+        </header>
+
+        <button
+          onClick={() => setCreating(true)}
+          className="oz-row mb-2 flex items-center gap-2 rounded border border-[var(--oz-success)]/60 px-3 py-3 text-left text-sm text-[var(--oz-success)]"
+        >
+          <PixelIcon name="plus" size={14} /> new session
         </button>
-      </header>
 
-      <button
-        onClick={() => setCreating(true)}
-        className="oz-row mb-2 flex items-center gap-2 rounded border border-[var(--oz-success)]/60 px-3 py-3 text-left text-sm text-[var(--oz-success)]"
-      >
-        <PixelIcon name="plus" size={14} /> new session
-      </button>
-
-      {creating && (
-        <div className="mb-2 rounded border border-[var(--oz-border)] bg-[var(--oz-surface)] p-3">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && create()}
-            placeholder="session name…"
-            className="w-full bg-transparent pb-3 text-sm outline-none placeholder:text-[var(--oz-dim)]"
-          />
-          <div className="flex gap-2 text-xs">
-            <button
-              onClick={create}
-              className="flex-1 rounded border border-[var(--oz-success)]/60 py-2 text-[var(--oz-success)]"
-            >
-              create & open
-            </button>
-            <button
-              onClick={() => setCreating(false)}
-              className="rounded border border-[var(--oz-border)] px-4 py-2 text-[var(--oz-dim)]"
-            >
-              cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      <ul className="flex flex-col gap-1">
-        {[...sessions]
-          .sort(
-            (a, b) =>
-              Number(!!b.pending) - Number(!!a.pending) || (b.updated || 0) - (a.updated || 0)
-          )
-          .map((s) => (
-            <li key={s.id}>
-              <SwipeRow
-                onOpen={() => router.push(`/session/${slugify(s.title)}?id=${s.id}`)}
-                onDelete={() => void remove(s)}
+        {creating && (
+          <div className="mb-2 rounded border border-[var(--oz-border)] bg-[var(--oz-surface)] p-3">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && create()}
+              placeholder="session name…"
+              className="w-full bg-transparent pb-3 text-sm outline-none placeholder:text-[var(--oz-dim)]"
+            />
+            <div className="flex gap-2 text-xs">
+              <button
+                onClick={create}
+                className="flex-1 rounded border border-[var(--oz-success)]/60 py-2 text-[var(--oz-success)]"
               >
-                <div className="flex items-center gap-1.5">
-                  {s.pending && <span className="oz-busy text-[var(--oz-active)]">●</span>}
-                  <div className="truncate text-sm">{s.title || s.id}</div>
-                </div>
-                <div className="truncate text-xs text-[var(--oz-dim)]">
-                  {s.pending ? 'awaiting answer…' : s.preview || '\u00a0'}
-                </div>
-              </SwipeRow>
-            </li>
-          ))}
-      </ul>
-    </main>
+                create & open
+              </button>
+              <button
+                onClick={() => setCreating(false)}
+                className="rounded border border-[var(--oz-border)] px-4 py-2 text-[var(--oz-dim)]"
+              >
+                cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <ul className="flex flex-col gap-1">
+          {[...sessions]
+            .map((s) => ({
+              s,
+              unread:
+                s.lastRole === 'assistant' && (s.lastAt || 0) > lastRead(slugify(s.title || s.id)),
+            }))
+            .sort(
+              (a, b) =>
+                Number(!!b.s.pending) - Number(!!a.s.pending) ||
+                Number(b.unread) - Number(a.unread) ||
+                (b.s.updated || 0) - (a.s.updated || 0)
+            )
+            .map(({ s, unread }) => (
+              <li key={s.id}>
+                <SwipeRow
+                  onOpen={() => router.push(`/session/${slugify(s.title)}?id=${s.id}`)}
+                  onDelete={() => void remove(s)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {s.pending && <span className="oz-busy text-[var(--oz-active)]">●</span>}
+                    {unread && !s.pending && <span className="text-[var(--oz-active)]">●</span>}
+                    <div className={`truncate text-sm ${unread ? 'font-bold' : ''}`}>
+                      {s.title || s.id}
+                    </div>
+                  </div>
+                  <div
+                    className={`truncate text-xs ${unread ? 'text-white/80' : 'text-[var(--oz-dim)]'}`}
+                  >
+                    {s.pending ? 'awaiting answer…' : s.preview || '\u00a0'}
+                  </div>
+                </SwipeRow>
+              </li>
+            ))}
+        </ul>
+      </main>
+    </>
   );
 }

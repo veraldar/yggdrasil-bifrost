@@ -6,6 +6,7 @@ import { PixelIcon } from '@/components/pixel-icon';
 import { type Msg, SessionMessage } from '@/components/session-message';
 import { diagEvent } from '@/lib/diag';
 import { clearAsked, ensureNotifyPermission, markAsked, notifyReply } from '@/lib/notify';
+import { markRead } from '@/lib/read';
 
 type Mode = 'text' | 'ptt' | 'free';
 type Attach =
@@ -260,6 +261,9 @@ export default function SessionView({
 
   useEffect(() => {
     seenRef.current = Math.max(seenRef.current, msgs.length);
+    // everything on screen counts as read — the list drops its unread badge
+    const lastT = msgs.length ? msgs[msgs.length - 1].time : 0;
+    if (slug && lastT) markRead(slug, lastT);
     if (!stickRef.current) return;
     // hard snap (scrollIntoView races late layout from images/fonts)
     const snap = () => {
