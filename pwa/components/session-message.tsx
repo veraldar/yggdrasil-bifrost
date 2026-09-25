@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Streamdown } from 'streamdown';
-import { PixelIcon } from '@/components/pixel-icon';
 
 export type Msg = { role: string; text: string; images: string[]; time: number };
 
@@ -41,7 +40,8 @@ function fmtTime(t: number): string {
 
 export function SessionMessage({ m }: { m: Msg }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const [preview, setPreview] = useState<number | null>(null);
+  // html blocks render directly (sandboxed); this holds the one showing code
+  const [rawIdx, setRawIdx] = useState(-1);
   const isUser = m.role === 'user';
   const htmls = isUser ? [] : htmlBlocks(m.text);
   const stamp = fmtTime(m.time);
@@ -77,25 +77,22 @@ export function SessionMessage({ m }: { m: Msg }) {
         <Streamdown>{m.text}</Streamdown>
       )}
 
-      {/* rendered/raw toggle for html blocks (assistant only) */}
+      {/* html blocks render inline by default (sandbox="" — no scripts, no
+          forms, no same-origin); tap toggles the raw code view */}
       {htmls.map((src, i) => (
         <div key={`h${i}`} className="mt-1">
           <button
-            onClick={() => setPreview(preview === i ? null : i)}
-            className="flex w-fit items-center gap-1 rounded border border-[var(--oz-border)] px-2 py-0.5 text-xs text-[var(--oz-dim)]"
+            onClick={() => setRawIdx(rawIdx === i ? -1 : i)}
+            className="flex w-fit items-center gap-1 rounded border border-[var(--oz-border)] px-2 py-0.5 text-[10px] text-[var(--oz-dim)]"
           >
-            {preview === i ? (
-              <>
-                <PixelIcon name="stop" size={10} /> raw
-              </>
-            ) : (
-              <>
-                <PixelIcon name="play" size={10} /> preview html
-              </>
-            )}
+            {rawIdx === i ? 'show rendered' : 'show code'}
           </button>
-          {preview === i && (
-            // sandbox="" — no scripts, no forms, no same-origin
+          {rawIdx === i ? (
+            <pre className="mt-1 max-h-40 overflow-auto text-[10px] whitespace-pre-wrap text-[var(--oz-dim)]">
+              {src.slice(0, 4000)}
+              {src.length > 4000 ? '…' : ''}
+            </pre>
+          ) : (
             <iframe
               sandbox=""
               srcDoc={src}

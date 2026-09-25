@@ -28,3 +28,6 @@ __pycache__/
 # OS / editor
 .DS_Store
 *.swp
+
+# agent-generated artifacts shown on the phone (served via /api/artifact)
+/artifacts/

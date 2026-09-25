@@ -21,3 +21,12 @@ This box runs everything. Mac Studio serves speech models (MLX Qwen3-ASR/TTS) on
 ## Rules
 - Proceed autonomously; verify with evidence; contact user only when stuck or looping.
 - No commits unless asked. Secrets stay out of git.
+
+## Showing artifacts to the phone
+The user often reads replies on the phone PWA. Make answers visual:
+- To show a picture (png/jpg/webp/svg/gif): save it to `artifacts/<name>.<ext>` in this
+  repo root, then reference it in your reply as a markdown image:
+  `![description](/api/artifact/<name>.<ext>)` — it renders inline in the chat.
+- To show a UI/mockup/page: paste it as a fenced ```html block — the phone renders it
+  inline in a sandboxed frame automatically.
+- Never point the phone at LAN IPs/ports; only `/api/artifact/...` links are reachable.
