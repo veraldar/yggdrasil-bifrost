@@ -2,13 +2,13 @@
  * GET  /api/session/[id]/messages → transcript for one session
  * POST /api/session/[id]/prompt   → send text/images/files to the session
  */
-
 import { NextResponse } from 'next/server';
-import { bustCache } from '@/lib/oc-cache';
 import { ocFetch, resolveId } from '@/lib/oc';
+import { bustCache } from '@/lib/oc-cache';
+import { isRunLive, markRunEnd, markRunStart } from '@/lib/oc-live';
+import { pushRunDone } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
-
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
@@ -21,18 +21,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         .map((p: any) => p.text || '')
         .join('\n')
         .trim();
-      // tool-only steps must stay visible on the phone ("thinking then
-      // nothing" bug): one compact line of tool activity, no part details
-      const tools = (m.parts || [])
-        .filter((p: any) => p.type === 'tool' && p.state?.title)
-        .map((p: any) => String(p.state.title).slice(0, 40));
+      // tool-only steps stay invisible on the phone: the busy indicator
+      // already shows activity, ⚙ lines were just clutter (user req)
       return {
         role: m.info?.role || m.role,
-        text:
-          text ||
-          (tools.length
-            ? `⚙ ${tools.slice(0, 3).join(' · ')}${tools.length > 3 ? ` +${tools.length - 3}` : ''}`
-            : ''),
+        text,
         images: (m.parts || [])
           .filter((p: any) => p.type === 'image' || p.mime?.startsWith('image/'))
           .map((p: any) => p.url || p.data || null),
@@ -59,6 +52,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       headers: {
         'X-Total-Count': String(all.length),
         'X-Run-State': runState,
+        // definitive live-run flag: the proxy tracks its own in-flight async
+        // prompts — the client can't tell "thinking between steps" from "done"
+        'X-Run-Live': isRunLive(sid) ? '1' : '0',
         'Cache-Control': 'no-store',
       },
     });
@@ -93,14 +89,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (!parts.length) return NextResponse.json({ error: 'empty' }, { status: 400 });
 
     if (async) {
-      // fire-and-forget: reply lands via transcript polling
+      // fire-and-forget: reply lands via transcript polling. The POST only
+      // resolves when the whole run finishes — that window IS the live-run
+      // flag, and its end fires Web Push (wakes a frozen phone) + cache bust
       const t0 = Date.now();
+      markRunStart(sid);
       ocFetch(`/session/${sid}/message`, {
         method: 'POST',
         body: JSON.stringify({ parts }),
       })
         .then(() => console.log(`[oc] async prompt done ${Date.now() - t0}ms`))
-        .catch((e) => console.error(`[oc] async prompt failed: ${e}`));
+        .catch((e) => console.error(`[oc] async prompt failed: ${e}`))
+        .finally(() => {
+          markRunEnd(sid);
+          bustCache(); // list drops the "awaiting answer" state
+          void pushRunDone(id);
+        });
       bustCache();
       return NextResponse.json({ queued: true });
     }

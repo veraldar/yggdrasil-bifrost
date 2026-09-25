@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { PixelIcon } from '@/components/pixel-icon';
 
-export type Msg = { role: string; text: string; images: string[]; time: number; count?: number };
+export type Msg = { role: string; text: string; images: string[]; time: number };
 
 function htmlBlocks(text: string): string[] {
   const out: string[] = [];

@@ -53,22 +53,6 @@ async function downscaleImage(f: File): Promise<string> {
   }
 }
 
-/** Collapse consecutive ⚙ tool-only steps into one line with a count —
- *  an edit burst otherwise floods the chat with near-identical bubbles. */
-function collapseToolSteps(msgs: Msg[]): Msg[] {
-  const out: Msg[] = [];
-  for (const m of msgs) {
-    const prev = out[out.length - 1];
-    if (m.text.startsWith('⚙ ') && prev && prev.text.startsWith('⚙ ')) {
-      const n = (prev.count || 1) + 1;
-      out[out.length - 1] = { ...m, text: `${m.text} ×${n}`, count: n };
-      continue;
-    }
-    out.push({ ...m });
-  }
-  return out;
-}
-
 export default function SessionView({
   params,
   searchParams,
@@ -111,6 +95,12 @@ export default function SessionView({
   const runStreakRef = useRef(0);
   const totalRef = useRef(0);
   const runBaseTotalRef = useRef(0);
+  // definitive "run in flight" from the proxy (its async POST resolves only
+  // when the run finishes) — immune to long between-steps thinking
+  const liveRef = useRef(false);
+  // arms ONE busy-restoration check on entering a session: navigating away
+  // and back (or a reload) must re-show the working indicator
+  const autoArmRef = useRef('');
 
   /** Reset run tracking at send time so the previous run's settled state
    *  can't instantly clear the new "working…" indicator. */
@@ -146,6 +136,16 @@ export default function SessionView({
       echoesRef.current = [];
       seenRef.current = 0;
       setLimit(60);
+      // fresh view: the previous session's run tracking must not leak in —
+      // the first poll below may restore busy if a run is live here
+      setBusy(false);
+      setError('');
+      runStateRef.current = '';
+      runStreakRef.current = 0;
+      runBaseTotalRef.current = 0;
+      totalRef.current = 0;
+      liveRef.current = false;
+      autoArmRef.current = p.slug;
       // instant paint from the session cache while the fresh fetch runs
       try {
         const raw = sessionStorage.getItem('oz-cache:' + p.slug);
@@ -185,6 +185,7 @@ export default function SessionView({
           setTotal(totalCount);
           totalRef.current = totalCount;
           const st = r.headers.get('X-Run-State') || '';
+          liveRef.current = r.headers.get('X-Run-Live') === '1';
           // "id|completed|lastRole" — completed=0 while a step runs or the
           // last raw message is the user's own prompt
           const [, done] = st.split('|');
@@ -194,6 +195,15 @@ export default function SessionView({
             runStateRef.current = st;
             // fresh state that already shows a completed run = seen once
             runStreakRef.current = done === '0' ? 0 : 1;
+          }
+          // entry arm: a prompt was sent before navigating away (or the run
+          // is live from another client) → bring the working indicator back
+          if (autoArmRef.current === slug) {
+            autoArmRef.current = '';
+            if (liveRef.current || st.endsWith('|0|user')) {
+              runBaseTotalRef.current = totalCount;
+              setBusy(true);
+            }
           }
           // backgrounded + the run's final answer landed = notify (a bare
           // assistant message is not enough — steps land mid-run)
@@ -270,14 +280,15 @@ export default function SessionView({
     const t = setInterval(() => {
       sec += 1;
       setBusySecs(sec);
-      // done = two consecutive polls saw the same run state, that state is a
-      // COMPLETED assistant message (mid part "0" = in-progress — thinking
-      // models can hold it for minutes), and the transcript grew past what
-      // existed at send time (a stable pre-send state must not clear it)
+      // done = the proxy no longer reports a live run, two consecutive polls
+      // saw the same run state, that state is a COMPLETED assistant message
+      // (mid part "0" = in-progress — thinking models can hold it for
+      // minutes), and the transcript grew past what existed at send time
       if (
         runStreakRef.current >= 2 &&
         runStateRef.current.split('|')[1] !== '0' &&
-        totalRef.current > runBaseTotalRef.current
+        totalRef.current > runBaseTotalRef.current &&
+        !liveRef.current
       ) {
         setBusy(false);
         runStreakRef.current = 0;
@@ -285,13 +296,19 @@ export default function SessionView({
         if (document.hidden) void notifyReply(slug);
         return;
       }
-      // wedge guard: 30s busy and the LAST raw message is still the user's
-      // own prompt (state ends "|0|user") → the runner never picked the
-      // message up (hung earlier run, queue dead). Abort so the session
-      // un-wedges; the prompt stays in the transcript, user can resend.
-      if (!wedgeFiredRef.current && sec >= 30 && runStateRef.current.endsWith('|0|user')) {
+      // wedge guard: 30s busy, NO live run, and the LAST raw message is
+      // still the user's own prompt → the runner never picked the message
+      // up (hung earlier run, dead queue). Abort so the session un-wedges;
+      // the prompt stays in the transcript, user can resend.
+      if (
+        !wedgeFiredRef.current &&
+        sec >= 30 &&
+        !liveRef.current &&
+        runStateRef.current.endsWith('|0|user')
+      ) {
         wedgeFiredRef.current = true;
         setError('no reply — the run seemed stuck, auto-stopped. Send again.');
+        setBusy(false); // the aborted prompt never completes on its own
         void fetch(`/api/session/${slug}/abort`, { method: 'POST' }).catch(() => {});
       }
     }, 1000);
@@ -419,15 +436,29 @@ export default function SessionView({
     try {
       const agent = Array.from(room.remoteParticipants.values())[0];
       if (agent) {
-        await room.localParticipant.performRpc({
+        const res = await room.localParticipant.performRpc({
           destinationIdentity: agent.identity,
           method: 'commit_turn',
           payload: '{}',
           responseTimeout: 10_000,
         });
+        // agent answered but its session is dead (stale room) → reconnect
+        if (res && res !== 'ok') throw new Error(res);
       }
-    } catch (e) {
-      setError(`commit failed: ${e}`);
+    } catch {
+      // stale voice session (e.g. the agent's session closed earlier) — a
+      // retry against the same room keeps failing, so drop it and reconnect
+      // with a fresh token; the next hold-to-talk works again
+      setError('voice session stale — reconnecting…');
+      setBusy(false);
+      await room.disconnect();
+      roomRef.current = null;
+      voicePromiseRef.current = null;
+      setVoiceState('off');
+      if (!unmountedRef.current && modeRef.current !== 'text') {
+        void ensureVoice().catch(() => {});
+      }
+      return;
     }
   }
 
@@ -598,7 +629,7 @@ export default function SessionView({
             empty session — type, hold the mic, or go hands-free
           </div>
         )}
-        {collapseToolSteps(msgs).map((m, i) => (
+        {msgs.map((m, i) => (
           <SessionMessage key={i} m={m} />
         ))}
         {busy && (
@@ -698,7 +729,7 @@ export default function SessionView({
             onPointerUp={pttUp}
             onPointerLeave={() => holding && pttUp()}
             onContextMenu={(e) => e.preventDefault()}
-            className={`w-full rounded border py-5 text-sm tracking-widest uppercase select-none ${
+            className={`w-full rounded border py-10 text-base tracking-widest uppercase select-none ${
               holding
                 ? 'oz-ptt-hold border-[var(--oz-success)]'
                 : 'border-[var(--oz-border)] text-[var(--oz-dim)]'

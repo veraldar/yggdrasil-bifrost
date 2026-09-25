@@ -12,13 +12,13 @@ test('fresh session answers with bifrost context', async ({ page }) => {
   await page.getByRole('button', { name: 'create & open' }).click();
   await expect(page).toHaveURL(/\/session\/e2e-context/);
 
-  await page.getByPlaceholder('message…').fill(
-    'One sentence: what is bifrost, in which directory does it live?'
-  );
+  await page
+    .getByPlaceholder('message…')
+    .fill('One sentence: what is bifrost, in which directory does it live?');
   await page.getByRole('button', { name: 'send', exact: true }).click();
 
-  // two assistant bubbles are expected: a ⚙ tool step (if the model reads
-  // the pointed AGENTS.md) + the text answer — target the LAST one
+  // the assistant answer lands as a bubble (tool-only steps are hidden on
+  // the phone now) — target the LAST one
   const reply = page.getByText(/\(assistant/).last();
   await expect(reply).toBeVisible({ timeout: 90_000 });
   // only the ANSWER (not the prompt echo) contains the location → proves the

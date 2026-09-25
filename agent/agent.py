@@ -162,7 +162,15 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     async def _commit_turn_rpc(data) -> str:
-        await session.commit_user_turn()
+        # the phone can call this while the session is already closing (stale
+        # room, participant disconnect race) — raising here surfaces as a raw
+        # RPC error/timeout on the phone; a "not-running" answer lets it
+        # self-heal by reconnecting
+        try:
+            await session.commit_user_turn()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("commit_turn on dead session: %s", e)
+            return "not-running"
         return "ok"
 
     ctx.room.local_participant.register_rpc_method("commit_turn", _commit_turn_rpc)
